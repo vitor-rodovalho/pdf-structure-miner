@@ -1,0 +1,2 @@
+# Força todos os arquivos de texto a usarem quebras de linha estilo Unix (LF)
+* text=auto eol=lf
