@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from src.core.logger_config import setup_logging
-from src.services.orchestrator import Orchestrator
+from src.services.pipeline import ExtractionPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -12,28 +12,30 @@ logger = logging.getLogger(__name__)
 def parse_arguments() -> argparse.Namespace:
     """
     Define e faz o parsing dos argumentos da linha de comando.
+
+    Returns:
+        argparse.Namespace: Objeto contendo os argumentos parseados.
     """
     parser = argparse.ArgumentParser(
-        description="Pipeline ETL para extração de dados de licitações públicas.",
+        description="Pipeline para extração de dados de licitações públicas.",
         epilog="Exemplo: python main.py --input data/downloads --output data/output/resultado.json",
     )
 
-    # [cite_start]Requisito 4.1: Entrada deve ser o caminho da pasta downloads [cite: 72]
     parser.add_argument(
         "--input",
         "-i",
         type=Path,
         required=True,
-        help="Caminho para a pasta contendo os arquivos JSON e anexos (ex: data/downloads).",
+        help="Caminho para a pasta contendo os arquivos JSON e pastas com anexos "
+        "(ex: data/downloads).",
     )
 
-    # [cite_start]Requisito 4.2: Saída deve ser um arquivo JSON [cite: 74]
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("data/output/resultado.json"),
-        help="Caminho completo onde o arquivo JSON final será salvo.",
+        required=True,
+        help="Caminho completo onde o arquivo array JSON final será salvo.",
     )
 
     # Flag opcional para debug
@@ -48,6 +50,20 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main():
+    """
+    Função principal que inicia o pipeline de extração de dados de licitações.
+
+    Fluxo de execução:
+    1. Parsing dos argumentos da linha de comando.
+    2. Configuração do sistema de logs.
+    3. Execução do pipeline de extração.
+    4. Tratamento de erros e saída apropriada.
+
+    Raises:
+        FileNotFoundError: Se o diretório de entrada não existir.
+        NotADirectoryError: Se o caminho de entrada não for uma pasta.
+        Exception: Qualquer outro erro crítico durante a execução do pipeline.
+    """
 
     # Parsing dos Argumentos
     args = parse_arguments()
@@ -55,38 +71,27 @@ def main():
     # Configuração de Logs
     setup_logging(verbose=args.verbose)
 
-    logger.info("Iniciando Pipeline ETL de Licitações...")
-    logger.info(f"Diretório de Entrada: {args.input}")
-    logger.info(f"Arquivo de Saída: {args.output}")
-
-    # 3. Validação de Entrada (Fail Fast)
-    if not args.input.exists() or not args.input.is_dir():
-        logger.critical(
-            f"O diretório de entrada '{args.input}' não existe ou não é uma pasta."
-        )
-        sys.exit(1)
-
-    # 4. Execução do Orquestrador (O Coração do Processo)
     try:
-        # Instancia o orquestrador passando os caminhos configurados
-        orchestrator = Orchestrator(input_path=args.input, output_path=args.output)
+        # Execução do Pipeline
+        pipeline = ExtractionPipeline()
+        pipeline.run(input_path=args.input, output_path=args.output)
 
-        # Dispara o processamento
-        # O método run() deve encapsular o fluxo: Ler Pastas -> Extrair -> Transformar -> Salvar
-        orchestrator.run()
-
-        logger.info("Processamento concluído com sucesso!")
         sys.exit(0)
 
+    except FileNotFoundError as e:
+        logger.critical(str(e))
+        sys.exit(1)
+
+    except NotADirectoryError as e:
+        logger.critical(str(e))
+        sys.exit(1)
+
     except Exception as e:
-        # Tratamento de Erro Top-Level
-        # Captura qualquer erro não tratado para evitar crash feio no terminal
         logger.critical(f"Erro fatal durante a execução do pipeline: {e}")
 
+        # Imprime stack trace se estiver em modo verbose
         if args.verbose:
-            logger.exception(
-                "Detalhes do erro:"
-            )  # Imprime stack trace se estiver em modo verbose
+            logger.exception("Detalhes do erro:")
 
         sys.exit(1)
 

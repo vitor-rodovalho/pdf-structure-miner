@@ -29,6 +29,6 @@ def setup_logging(verbose: bool = False):
 
     root_logger.addHandler(handler)
 
-    # Reduz barulho de bibliotecas externas (essencial!)
-    # logging.getLogger("pdfminer").setLevel(logging.WARNING)
-    # logging.getLogger("urllib3").setLevel(logging.WARNING)
+    # Reduz barulho de bibliotecas externas
+    logging.getLogger("pdfminer").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
