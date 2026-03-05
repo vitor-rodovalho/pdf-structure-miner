@@ -123,13 +123,12 @@ graph TD
 
 ## 📁 Estrutura de Entrada Esperada
 
-Para o processamento em lote, a CLI é flexível e aceita tanto pastas já descompactadas quanto os arquivos compactados originais baixados dos portais:
+Para o processamento em lote, a CLI é flexível e consegue lidar com licitações sem anexos, com anexos compactados, corrompidos, etc:
 
 ```text
 data/downloads/
 ├── 6af36fba...105e.json           # Arquivo JSON com metadados do órgão
-├── 6af36fba...105e.zip            # Arquivo ZIP (o sistema descompactará automaticamente!)
-├── 9bc88dca...201f/               # Ou pasta de anexos já extraída manualmente
+├── 6af36fba...105e/               # Diretório com anexos
 │   ├── anexo_comp_1_edital.pdf    
 │   ├── anexo_comp_2_termo.docx    
 └── ...
