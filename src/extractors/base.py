@@ -7,8 +7,16 @@ from typing import TypedDict
 
 from unidecode import unidecode
 
-from src.core.config import HEADER_MAPPING
-from src.schemas.licitacao import ItemLicitacao
+from src.core import (
+    GARBAGE_CHARS,
+    GENERIC_UNITS,
+    HEADER_MAPPING,
+    LOTE_BLOCK_WORDS,
+    MAX_VALID_QUANTITY,
+    MIN_DESC_LEN,
+)
+from src.schemas import ItemLicitacao
+from src.utils import MAX_UNID_LEN, clean_number, get_text_safe, normalize_lote
 
 logger = logging.getLogger(__name__)
 
@@ -47,100 +55,12 @@ class BaseExtractor(ABC):
     FORBIDDEN_COLUMN_TERMS = ("vlr", "valor", "preco", "preço", "total", "r$", "unit")
 
     # =========================================================================
-    # REGRAS DE LIMPEZA E SANITIZAÇÃO GERAL
-    # =========================================================================
-
-    # Máximo de letras permitidas dentro de uma string para ser tentada como número no fallback
-    MAX_ALPHA_IN_NUMBER = 2
-
-    # Caracteres isolados que indicam descrições ou unidades corrompidas em tabelas mal formatadas
-    GARBAGE_CHARS = frozenset({"-", "_", ".", " ", "x"})
-
-    # Prefixos jurídicos/administrativos indicando que a linha é cláusula do edital, não um produto
-    INVALID_DESC_PREFIXES = ("art.", "lei ", "decreto", "data:", "assinatura", "pregão", "processo")
-
-    # =========================================================================
-    # REGRAS DE NEGÓCIO DO DOMÍNIO
-    # =========================================================================
-
-    # Tamanho mínimo absoluto para uma string ser considerada uma descrição de produto válida
-    MIN_DESC_LEN = 3
-
-    # Tamanho máximo aceitável para o texto de uma Unidade de Fornecimento
-    MAX_UNID_LEN = 20
-
-    # Limite máximo de quantidade para evitar a extração acidental de códigos
-    MAX_VALID_QUANTITY = 100000
-
-    # Palavras-chave que indicam endereços, bloqueando a falsa detecção de um "Lote"
-    LOTE_BLOCK_WORDS = frozenset(
-        [
-            "RUA",
-            "QUADRA",
-            "QDA",
-            "BAIRRO",
-            "CEP",
-            "ENDEREÇO",
-            "ENDERECO",
-            "AVENIDA",
-            "ALAMEDA",
-            "RODOVIA",
-        ]
-    )
-
-    # Unidades preteridas na deduplicação se houver uma alternativa mais específica no mesmo item
-    GENERIC_UNITS = frozenset({"UNIDADE"})
-
-    # =========================================================================
     # MÉTODOS PRINCIPAIS E AUXILIARES
     # =========================================================================
 
     @abstractmethod
     def extract(self, file_path: Path) -> list[ItemLicitacao]:
         pass
-
-    def _clean_rows(self, rows: Sequence[Sequence[str | None]]) -> list[list[str]]:
-        """
-        Limpa uma matriz bruta de linhas, removendo quebras de linha indesejadas e descartando
-        linhas que estejam completamente vazias.
-
-        Args:
-            rows (Sequence[Sequence[str | None]]): Matriz bidimensional extraída da tabela.
-
-        Returns:
-            list[list[str]]: Matriz bidimensional higienizada, contendo apenas strings.
-        """
-        cleaned = []
-
-        for row in rows:
-            # Substitui quebras de linha por espaço e remove espaços extras
-            clean_row = [(cell.replace("\n", " ").strip() if cell else "") for cell in row]
-
-            # Só adiciona a linha se houver pelo menos uma célula preenchida
-            if any(clean_row):
-                cleaned.append(clean_row)
-
-        return cleaned
-
-    def _get_text_safe(self, row: Sequence[str | None], idx: int | None) -> str:
-        """
-        Extrai o texto de uma célula da linha de forma segura, tratando índices inválidos
-        e quebras de linha.
-
-        Args:
-            row (Sequence[str | None]): Linha de dados atual.
-            idx (int | None): Índice da coluna a ser extraída.
-
-        Returns:
-            str: Texto limpo da célula ou string vazia se inválido.
-        """
-        if idx is not None and 0 <= idx < len(row):
-            val = row[idx]
-
-            if val is not None:
-                return str(val).replace("\n", " ").strip()
-
-        return ""
 
     def _identify_columns(self, row: Sequence[str | None]) -> dict[str, int] | None:
         """
@@ -272,7 +192,7 @@ class BaseExtractor(ABC):
             cell_upper = cell.upper().strip()
 
             # Se a célula tiver palavras de endereço, aborta a busca nesta célula
-            if any(x in cell_upper for x in self.LOTE_BLOCK_WORDS):
+            if any(x in cell_upper for x in LOTE_BLOCK_WORDS):
                 continue
 
             if "LOTE" in cell_upper or "GRUPO" in cell_upper:
@@ -284,7 +204,7 @@ class BaseExtractor(ABC):
         # Usa compreensão de lista para garantir que 'None' não seja concatenado
         full_text = " ".join(str(c) for c in row if c).upper()
 
-        if not any(x in full_text for x in self.LOTE_BLOCK_WORDS):
+        if not any(x in full_text for x in LOTE_BLOCK_WORDS):
             match = re.search(regex_lote, full_text)
 
             if match:
@@ -306,38 +226,18 @@ class BaseExtractor(ABC):
         Returns:
             str | None: O lote normalizado encontrado ou o lote salvo no estado.
         """
-        lote_raw = self._get_text_safe(row, idx_lote)
+        lote_raw = get_text_safe(row, idx_lote)
 
         if lote_raw:
             lote_match = re.search(r"\d+", lote_raw)
 
             if lote_match:
-                state["last_lote"] = self._normalize_lote(lote_match.group())
+                state["last_lote"] = normalize_lote(lote_match.group())
 
             else:
                 state["last_lote"] = lote_raw
 
         return state["last_lote"]
-
-    def _normalize_lote(self, val: str | int | None) -> str | None:
-        """
-        Remove zeros à esquerda de lotes puramente numéricos.
-
-        Args:
-            val (str | int | None): Valor bruto do lote.
-
-        Returns:
-            str | None: Lote formatado.
-        """
-        if not val:
-            return None
-
-        s = str(val).strip()
-
-        if s.isdigit():
-            return str(int(s))
-
-        return s
 
     def _update_item_counter(
         self, row: Sequence[str | None], idx_item: int | None, state: ExtractionState
@@ -354,8 +254,8 @@ class BaseExtractor(ABC):
         Returns:
             int: O número consolidado do item atual.
         """
-        item_str = self._get_text_safe(row, idx_item)
-        item_raw = self._clean_number(item_str)
+        item_str = get_text_safe(row, idx_item)
+        item_raw = clean_number(item_str)
 
         if item_raw and item_raw > 0:
             final_item = int(item_raw)
@@ -401,7 +301,7 @@ class BaseExtractor(ABC):
             # Filtra todas as células que contêm números viáveis
             possible_numbers = []
             for cell in clean_row:
-                num = self._clean_number(cell)
+                num = clean_number(cell)
 
                 if num is not None:
                     possible_numbers.append((num, cell))
@@ -424,7 +324,7 @@ class BaseExtractor(ABC):
             # Busca secundária por uma unidade genérica se a principal falhou
             if unid == "Unidade":
                 for cell in clean_row:
-                    if 0 < len(cell) <= self.MAX_UNID_LEN and cell.isalpha():
+                    if 0 < len(cell) <= MAX_UNID_LEN and cell.isalpha():
                         unid = cell.upper()
                         break
 
@@ -463,7 +363,7 @@ class BaseExtractor(ABC):
 
         for cell in clean_row:
             # A descrição deve ter um comprimento mínimo e não deve ser confundida com um número
-            if len(cell) > self.MIN_DESC_LEN and not self._clean_number(cell):
+            if len(cell) > MIN_DESC_LEN and not clean_number(cell):
                 candidates_desc.append((len(cell), cell))
 
         if not candidates_desc:
@@ -495,13 +395,13 @@ class BaseExtractor(ABC):
             val = int(num)
 
             # Pula o ID do item atual/anterior e números gigantes
-            if val in (current_item_idx, current_item_idx - 1) or val > self.MAX_VALID_QUANTITY:
+            if val in (current_item_idx, current_item_idx - 1) or val > MAX_VALID_QUANTITY:
                 continue
 
             qtd = val
             text_in_cell = re.sub(r"[\d\.,]", "", original_cell).strip()
 
-            if text_in_cell and len(text_in_cell) <= self.MAX_UNID_LEN:
+            if text_in_cell and len(text_in_cell) <= MAX_UNID_LEN:
                 unid = text_in_cell.upper()
 
             break
@@ -512,7 +412,7 @@ class BaseExtractor(ABC):
             qtd = int(last_num)
             text_in_cell = re.sub(r"[\d\.,]", "", last_cell).strip()
 
-            if text_in_cell and len(text_in_cell) <= self.MAX_UNID_LEN:
+            if text_in_cell and len(text_in_cell) <= MAX_UNID_LEN:
                 unid = text_in_cell.upper()
 
         return qtd, unid
@@ -537,7 +437,7 @@ class BaseExtractor(ABC):
             if self._is_garbage_item(item):
                 continue
 
-            lote = self._normalize_lote(item.lote)
+            lote = normalize_lote(item.lote)
 
             id_key = (lote, item.item)
 
@@ -565,11 +465,11 @@ class BaseExtractor(ABC):
         Returns:
             bool: True se o item for considerado lixo, False caso contrário.
         """
-        if not item.objeto or len(item.objeto) < self.MIN_DESC_LEN:
+        if not item.objeto or len(item.objeto) < MIN_DESC_LEN:
             return True
 
         # Se a descrição for composta APENAS por caracteres inúteis, é lixo
-        return set(item.objeto.strip().lower()) <= self.GARBAGE_CHARS
+        return set(item.objeto.strip().lower()) <= GARBAGE_CHARS
 
     def _merge_duplicate_items(self, existing: ItemLicitacao, new_item: ItemLicitacao) -> None:
         """
@@ -595,69 +495,12 @@ class BaseExtractor(ABC):
         old_u = str(existing.unidade_fornecimento).strip().upper()
 
         # Prioriza Unidades de Fornecimento mais específicas e detalhadas
-        if (old_u in self.GENERIC_UNITS and new_u not in self.GENERIC_UNITS) or (
-            old_u not in self.GENERIC_UNITS
-            and new_u not in self.GENERIC_UNITS
+        if (old_u in GENERIC_UNITS and new_u not in GENERIC_UNITS) or (
+            old_u not in GENERIC_UNITS
+            and new_u not in GENERIC_UNITS
             and len(new_item.unidade_fornecimento) > len(existing.unidade_fornecimento)
         ):
             existing.unidade_fornecimento = new_item.unidade_fornecimento
 
         if new_item.lote and not existing.lote:
             existing.lote = new_item.lote
-
-    def _clean_unidade_fornecimento(self, val: str | None) -> str:
-        """
-        Higieniza a unidade de fornecimento.
-        Esta função remove números e pontuações iniciais para isolar apenas o texto da unidade.
-
-        Args:
-            val (str | None): Valor bruto extraído da coluna de unidade.
-
-        Returns:
-            str: Unidade de fornecimento limpa (ou "Unidade" como padrão caso inválida).
-        """
-        if not val:
-            return "Unidade"
-
-        # Remove dígitos, pontos, vírgulas e espaços do início da string
-        cleaned = re.sub(r"^[\d\.,\s]+", "", str(val)).strip()
-
-        # Se após a limpeza não sobrar nada, ou sobrar um texto gigante, assumime o valor padrão
-        if not cleaned or len(cleaned) > self.MAX_UNID_LEN:
-            return "Unidade"
-
-        return cleaned
-
-    @classmethod
-    def _clean_number(cls, val: str | None) -> float | None:
-        """
-        Extrai o primeiro número válido de uma string ruidosa.
-        Aborta se a string contiver excesso de letras, indicando ser um texto comum.
-
-        Args:
-            val (str | None): String ruidosa extraída de uma célula.
-
-        Returns:
-            float | None: Número decimal/inteiro ou None se a string for inválida.
-        """
-        if not val:
-            return None
-
-        try:
-            clean = val.strip()
-
-            # Impede a extração de números dentro de textos puramente descritivos
-            if len(re.findall(r"[a-zA-Z]", clean)) > cls.MAX_ALPHA_IN_NUMBER:
-                return None
-
-            clean = clean.replace(".", "").replace(",", ".")
-            match = re.search(r"[\d\.]+", clean)
-
-            if match:
-                num = float(match.group())
-                return num if num > 0 else None
-
-            return None
-
-        except Exception:
-            return None

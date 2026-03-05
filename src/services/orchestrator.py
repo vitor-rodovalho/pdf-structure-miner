@@ -8,10 +8,8 @@ from pathlib import Path
 import pdfplumber
 from unidecode import unidecode
 
-from src.extractors.base import BaseExtractor
-from src.extractors.docx import DocxExtractor
-from src.extractors.pdf import PDFExtractor
-from src.schemas.licitacao import ItemLicitacao, Licitacao
+from src.extractors import BaseExtractor, DocxExtractor, PDFExtractor
+from src.schemas import ItemLicitacao, Licitacao
 
 logger = logging.getLogger(__name__)
 

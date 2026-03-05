@@ -3,8 +3,8 @@ import logging
 import sys
 from pathlib import Path
 
-from src.core.logger_config import setup_logging
-from src.services.pipeline import ExtractionPipeline
+from src.core import setup_logging
+from src.services import ExtractionPipeline
 
 logger = logging.getLogger(__name__)
 

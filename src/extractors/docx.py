@@ -7,8 +7,10 @@ import docx
 from docx.document import Document
 from docx.table import Table, _Cell
 
-from src.extractors.base import BaseExtractor, ExtractionState
-from src.schemas.licitacao import ItemLicitacao
+from src.core import INVALID_DESC_PREFIXES, MIN_DESC_LEN, VALID_UNIDS_SET
+from src.extractors import BaseExtractor, ExtractionState
+from src.schemas import ItemLicitacao
+from src.utils import clean_unidade_fornecimento, get_text_safe
 
 logger = logging.getLogger(__name__)
 
@@ -41,47 +43,6 @@ class DocxExtractor(BaseExtractor):
 
     # Tamanho máximo para fazer uma busca agressiva de números na célula
     MAX_QTD_STRICT_LEN = 10
-
-    # Unidades de fornecimento explícitas usadas no resgate visual caso a coluna da unidade suma
-    VALID_UNIDS_SET = frozenset(
-        [
-            "UND",
-            "UNID",
-            "UNIDADE",
-            "CX",
-            "CAIXA",
-            "KG",
-            "L",
-            "LITRO",
-            "LITROS",
-            "PCT",
-            "PACOTE",
-            "PAR",
-            "PARES",
-            "M",
-            "METRO",
-            "M2",
-            "M3",
-            "MÊS",
-            "MESES",
-            "SERVIÇO",
-            "SERVICO",
-            "CJ",
-            "CONJUNTO",
-            "KIT",
-            "GALÃO",
-            "FRASCO",
-            "HORA SERVIÇO TECNICO",
-            "ROLO",
-            "TONELADA",
-            "TON",
-            "JG",
-            "JOGO",
-            "PEÇA",
-            "PÇ",
-            "UND SERVIÇO TÉCNICO",
-        ]
-    )
 
     # =========================================================================
     # EXTRAÇÃO E MÉTODOS AUXILIARES
@@ -260,7 +221,7 @@ class DocxExtractor(BaseExtractor):
         # Garante que cláusulas do edital e leis citadas na tabela não virem produtos fantasma
         desc_lower = item.objeto.lower()
 
-        if desc_lower.startswith(self.INVALID_DESC_PREFIXES):
+        if desc_lower.startswith(INVALID_DESC_PREFIXES):
             return None
 
         if not item.lote and active_lote:
@@ -384,7 +345,7 @@ class DocxExtractor(BaseExtractor):
             descrição válida.
         """
         idx_desc = mapping.get("objeto")
-        desc = self._get_text_safe(row, idx_desc)
+        desc = get_text_safe(row, idx_desc)
 
         # Se não achou na coluna certa, pega o texto mais longo da linha
         if not desc or len(desc) < self.MIN_DESC_FALLBACK_LEN:
@@ -396,7 +357,7 @@ class DocxExtractor(BaseExtractor):
             if len(maior_texto) > self.MIN_DESC_FALLBACK_LEN:
                 desc = maior_texto
 
-        if not desc or len(desc) < self.MIN_DESC_LEN:
+        if not desc or len(desc) < MIN_DESC_LEN:
             return None
 
         return desc
@@ -468,8 +429,8 @@ class DocxExtractor(BaseExtractor):
             str: Unidade de fornecimento extraída ou resgatada. Padrão: "Unidade".
         """
         idx_unid = mapping.get("unidade_fornecimento")
-        unid_raw = self._get_text_safe(row, idx_unid)
-        unid = self._clean_unidade_fornecimento(unid_raw)
+        unid_raw = get_text_safe(row, idx_unid)
+        unid = clean_unidade_fornecimento(unid_raw)
 
         # Se ficou com o padrão genérico, varre a linha procurando uma unidade válida no Set
         if unid.upper() == "UNIDADE":
@@ -477,7 +438,7 @@ class DocxExtractor(BaseExtractor):
                 if cell:
                     cstr = str(cell).strip().upper()
 
-                    if cstr in self.VALID_UNIDS_SET:
+                    if cstr in VALID_UNIDS_SET:
                         return cstr.capitalize()
 
         return unid

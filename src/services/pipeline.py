@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 
-from src.services.orchestrator import Orchestrator
+from src.services import Orchestrator
 
 logger = logging.getLogger(__name__)
 

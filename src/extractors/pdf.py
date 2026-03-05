@@ -6,8 +6,25 @@ from pathlib import Path
 import pdfplumber
 from pdfplumber.pdf import PDF
 
-from src.extractors.base import BaseExtractor, ExtractionState
-from src.schemas.licitacao import ItemLicitacao
+from src.core import (
+    FINANCIAL_TOTALS_KEYS,
+    GARBAGE_DESC_WORDS,
+    INVALID_DESC_PREFIXES,
+    MAX_DESC_LEN,
+    MAX_UNID_LEN,
+    MIN_DESC_LEN,
+    MIN_DESC_NUMBER_LEN,
+    TRASH_KEYWORDS,
+)
+from src.extractors import BaseExtractor, ExtractionState
+from src.schemas import ItemLicitacao
+from src.utils import (
+    clean_number,
+    clean_rows,
+    clean_unidade_fornecimento,
+    get_text_safe,
+    normalize_lote,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,60 +70,9 @@ class PDFExtractor(BaseExtractor):
     # Palavras que indicam cabeçalhos/rodapés inúteis no meio da página
     RELACAO_ITENS_RODAPE_WORDS = frozenset(["página", "uasg", "fls."])
 
-    # Palavras que acionam o "Kill Switch" se encontradas dentro da coluna de descrição
-    GARBAGE_DESC_WORDS = frozenset(
-        [
-            "ANEXO",
-            "TERMO DE",
-            "DECLARAÇÃO",
-            "EDITAL",
-            "PREGÃO",
-            "RODAPÉ",
-            "CONSEQUÊNCIA",
-            "RISCO",
-            "SANÇÕES",
-        ]
-    )
-
-    # Palavras e trechos que indicam que a linha é um rodapé, cabeçalho ou metadado do PDF
-    TRASH_KEYWORDS = frozenset(
-        [
-            "cnpj:",
-            "cep:",
-            "telefone:",
-            "tel:",
-            "endereço:",
-            "e-mail:",
-            "email:",
-            "valor total estimado",
-            "documento assinado",
-            "código verificador",
-            "autenticidade do",
-            "eproc.",
-            "local e data",
-            "valor máximo",
-        ]
-    )
-
-    # Termos sem espaço que indicam linhas de totalizadores financeiros que devem ser ignoradas
-    FINANCIAL_TOTALS_KEYS = frozenset(
-        [
-            "valortotal",
-            "valorglobal",
-            "valormáximo",
-            "xxxx",
-        ]
-    )
-
     # Limites para detecção de fallback do número do item
     MAX_ITEM_NUM_DIGITS = 4
     MAX_RAW_ITEM_LENGTH = 7
-
-    # Comprimento máximo aceitável para uma descrição
-    MAX_DESC_LEN = 1500
-
-    # Tamanho mínimo da descrição se ela parecer ser apenas um número
-    MIN_DESC_NUMBER_LEN = 15
 
     # Tamanho máximo de uma string de quantidade
     MAX_QTD_STRING_LEN = 25
@@ -314,7 +280,7 @@ class PDFExtractor(BaseExtractor):
             idx (int): Índice da linha atual na lista de linhas.
             curr_item (dict): Dicionário do item atual sendo construído.
         """
-        clean_quantidade = self._clean_number(self._get_value_relacao_itens(line, lines, idx))
+        clean_quantidade = clean_number(self._get_value_relacao_itens(line, lines, idx))
         if clean_quantidade:
             curr_item["quantidade"] = int(clean_quantidade)
 
@@ -490,13 +456,13 @@ class PDFExtractor(BaseExtractor):
         """
         items = []
         current_lote = None
-        clean_rows = self._clean_rows(rows)
+        cleaned_rows = clean_rows(rows)
 
-        for row in clean_rows:
+        for row in cleaned_rows:
             # Se a linha for um lote, atualiza o estado e pula para a próxima linha
             lote = self._extract_lote_from_row(row)
             if lote:
-                norm_lote = self._normalize_lote(lote)
+                norm_lote = normalize_lote(lote)
                 current_lote = norm_lote
                 state["last_lote"] = norm_lote
                 continue
@@ -556,8 +522,8 @@ class PDFExtractor(BaseExtractor):
                     break
 
         # Verifica se a linha contém lixo (termos financeiros ou rodapés/sensíveis)
-        is_financial_trash = any(key in row_str_no_space for key in self.FINANCIAL_TOTALS_KEYS)
-        is_general_trash = any(kw in row_str for kw in self.TRASH_KEYWORDS)
+        is_financial_trash = any(key in row_str_no_space for key in FINANCIAL_TOTALS_KEYS)
+        is_general_trash = any(kw in row_str for kw in TRASH_KEYWORDS)
 
         if is_financial_trash or is_general_trash:
             state["pending_broken_desc"] = None
@@ -567,7 +533,7 @@ class PDFExtractor(BaseExtractor):
         # Determina o lote ativo para associar ao item
         active = current_lote if current_lote else state.get("last_lote")
         if active:
-            active = self._normalize_lote(active)
+            active = normalize_lote(active)
         state["last_lote"] = active
 
         item = parse_func(row, header_map, state)
@@ -579,8 +545,8 @@ class PDFExtractor(BaseExtractor):
             if (
                 not any(c.isalpha() for c in unid_str)
                 or set(unid_str) == {"X"}
-                or item.objeto.lower().strip().startswith(self.INVALID_DESC_PREFIXES)
-                or len(item.objeto) < self.MIN_DESC_LEN
+                or item.objeto.lower().strip().startswith(INVALID_DESC_PREFIXES)
+                or len(item.objeto) < MIN_DESC_LEN
             ):
                 return None
 
@@ -609,10 +575,10 @@ class PDFExtractor(BaseExtractor):
                 return None
 
             # Extrações Iniciais
-            raw_desc = self._get_text_safe(row, mapping.get("objeto"))
-            val_qtd = self._get_text_safe(row, mapping.get("quantidade"))
+            raw_desc = get_text_safe(row, mapping.get("objeto"))
+            val_qtd = get_text_safe(row, mapping.get("quantidade"))
 
-            raw_item = self._clean_number(self._get_text_safe(row, mapping.get("item")))
+            raw_item = clean_number(get_text_safe(row, mapping.get("item")))
             try:
                 item_num = int(float(raw_item)) if raw_item is not None else None
             except (ValueError, TypeError):
@@ -620,7 +586,7 @@ class PDFExtractor(BaseExtractor):
 
             # Se o mapa falhou, mas a primeira coluna é um número isolado, é o Item
             if item_num is None:
-                cand_item = str(self._get_text_safe(row, 0) or "").strip()
+                cand_item = str(get_text_safe(row, 0) or "").strip()
                 clean_cand_item = re.sub(r"[^\d]", "", cand_item)
                 if (
                     clean_cand_item
@@ -630,10 +596,10 @@ class PDFExtractor(BaseExtractor):
                     item_num = int(clean_cand_item)
 
             qtd = self._extract_quantidade_table(row, val_qtd, mapping.get("quantidade"))
-            has_valid_desc = bool(raw_desc and len(raw_desc) >= self.MIN_DESC_LEN)
+            has_valid_desc = bool(raw_desc and len(raw_desc) >= MIN_DESC_LEN)
 
             # Se a descrição tem palavras que indicam lixo, ignora a linha inteira e reseta buffers
-            if has_valid_desc and any(w in raw_desc.upper() for w in self.GARBAGE_DESC_WORDS):
+            if has_valid_desc and any(w in raw_desc.upper() for w in GARBAGE_DESC_WORDS):
                 state["last_extracted_item"] = None
                 state["pending_broken_desc"] = None
                 return None
@@ -641,17 +607,14 @@ class PDFExtractor(BaseExtractor):
             # Resolve a fragmentação de linhas
             final_desc = self._resolve_row_buffer(state, has_valid_desc, qtd, item_num, raw_desc)
 
-            if not qtd or not final_desc or len(final_desc) < self.MIN_DESC_LEN:
+            if not qtd or not final_desc or len(final_desc) < MIN_DESC_LEN:
                 return None
 
             # Remove lixo de "R$" vazio que possa ter vazado das colunas de valores
             final_desc = re.sub(r"(?i)\bR\$\s*R\$?\b", "", final_desc).strip()
             final_desc = re.sub(r"(?i)\bR\$\b", "", final_desc).strip()
 
-            if (
-                self._clean_number(final_desc) is not None
-                and len(final_desc) < self.MIN_DESC_NUMBER_LEN
-            ):
+            if clean_number(final_desc) is not None and len(final_desc) < MIN_DESC_NUMBER_LEN:
                 return None
 
             # Criação do Objeto
@@ -717,7 +680,7 @@ class PDFExtractor(BaseExtractor):
         # linha de continuação da descrição
         if has_valid_desc and not qtd and not item_num:
             last_item = state.get("last_extracted_item")
-            if last_item and len(last_item.objeto) < self.MAX_DESC_LEN:
+            if last_item and len(last_item.objeto) < MAX_DESC_LEN:
                 last_item.objeto += " " + raw_desc
 
         # Se a descrição é válida e tem número de item, mas não tem quantidade, pode ser início
@@ -813,7 +776,7 @@ class PDFExtractor(BaseExtractor):
 
         for i in indices_to_try:
             if 0 <= i < len(row):
-                candidate_str = self._get_text_safe(row, i)
+                candidate_str = get_text_safe(row, i)
                 if not candidate_str:
                     continue
 
@@ -829,7 +792,7 @@ class PDFExtractor(BaseExtractor):
                 ):
                     continue
 
-                qtd_candidate = self._clean_number(candidate_str)
+                qtd_candidate = clean_number(candidate_str)
 
                 if qtd_candidate:
                     return int(qtd_candidate)
@@ -857,23 +820,23 @@ class PDFExtractor(BaseExtractor):
             indices_to_try = [idx_unid, idx_unid + 1, idx_unid - 1]
 
             for i in indices_to_try:
-                candidate = self._get_text_safe(row, i)
+                candidate = get_text_safe(row, i)
 
                 # Verifica se o candidato tem texto e contém letras
                 if candidate and any(c.isalpha() for c in candidate):
                     unid_raw = candidate
                     break
 
-        unid = self._clean_unidade_fornecimento(unid_raw)
+        unid = clean_unidade_fornecimento(unid_raw)
 
         if unid.upper() == "UNIDADE" and val_qtd:
             possible_unid = re.sub(r"[\d\.,]", "", val_qtd)
             possible_unid = re.sub(r"(?i)R\$|RS", "", possible_unid).strip()
             if (
                 possible_unid
-                and len(possible_unid) <= self.MAX_UNID_LEN
+                and len(possible_unid) <= MAX_UNID_LEN
                 and any(c.isalpha() for c in possible_unid)
             ):
-                unid = self._clean_unidade_fornecimento(possible_unid)
+                unid = clean_unidade_fornecimento(possible_unid)
 
         return unid
