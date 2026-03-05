@@ -14,7 +14,7 @@ from src.utils import deduplicate_items
 logger = logging.getLogger(__name__)
 
 
-class DocxExtractor(BaseExtractor):
+class DOCXExtractor(BaseExtractor):
     """
     Classe responsável por extrair dados de arquivos .DOCX usando a biblioteca python-docx.
     """

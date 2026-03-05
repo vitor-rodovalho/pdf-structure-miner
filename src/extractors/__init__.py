@@ -5,7 +5,7 @@ padronização.
 """
 
 from src.extractors.base import BaseExtractor, ExtractionState
-from src.extractors.docx import DocxExtractor
+from src.extractors.docx import DOCXExtractor
 from src.extractors.pdf import PDFExtractor
 
-__all__ = ["BaseExtractor", "DocxExtractor", "ExtractionState", "PDFExtractor"]
+__all__ = ["BaseExtractor", "DOCXExtractor", "ExtractionState", "PDFExtractor"]

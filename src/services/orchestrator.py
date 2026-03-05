@@ -8,7 +8,7 @@ from pathlib import Path
 import pdfplumber
 from unidecode import unidecode
 
-from src.extractors import BaseExtractor, DocxExtractor, PDFExtractor
+from src.extractors import BaseExtractor, DOCXExtractor, PDFExtractor
 from src.schemas import ItemLicitacao, Licitacao
 from src.utils import deduplicate_items
 
@@ -54,7 +54,7 @@ class Orchestrator:
         """
 
         # Inicializa os extratores uma única vez
-        self.extractors = {".pdf": PDFExtractor(), ".docx": DocxExtractor()}
+        self.extractors = {".pdf": PDFExtractor(), ".docx": DOCXExtractor()}
 
     def process_directory(self, input_dir: Path) -> list[Licitacao]:
         """
