@@ -10,6 +10,7 @@ from unidecode import unidecode
 
 from src.extractors import BaseExtractor, DocxExtractor, PDFExtractor
 from src.schemas import ItemLicitacao, Licitacao
+from src.utils import deduplicate_items
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +143,7 @@ class Orchestrator:
 
         # Remove itens duplicados que vieram de múltiplos anexos
         if all_items and self.extractors:
-            first_extractor = next(iter(self.extractors.values()))
-            all_items = first_extractor._deduplicate_items(all_items)
+            all_items = deduplicate_items(all_items)
 
         if not all_items:
             logger.warning(f"Finalizado {json_path.name}: 0 itens extraídos.")

@@ -13,6 +13,7 @@ from .cleaners import (
     get_text_safe,
     normalize_lote,
 )
+from .deduplicator import deduplicate_items
 
 __all__ = [
     "MAX_ALPHA_IN_NUMBER",
@@ -20,6 +21,7 @@ __all__ = [
     "clean_number",
     "clean_rows",
     "clean_unidade_fornecimento",
+    "deduplicate_items",
     "get_text_safe",
     "normalize_lote",
 ]
