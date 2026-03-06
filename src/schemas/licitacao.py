@@ -10,12 +10,8 @@ class ItemLicitacao(BaseModel):
         default=None,
         description="Identificador do lote/grupo (ex: 'G1', '1'). Null se não houver.",
     )
-    item: int = Field(
-        ..., gt=0, description="Número sequencial do item. Deve ser maior que 0."
-    )
-    objeto: str = Field(
-        ..., min_length=3, description="Descrição completa do item licitado."
-    )
+    item: int = Field(..., gt=0, description="Número sequencial do item. Deve ser maior que 0.")
+    objeto: str = Field(..., min_length=3, description="Descrição completa do item licitado.")
     quantidade: int = Field(
         ..., gt=0, description="Quantidade solicitada. Deve ser um inteiro positivo."
     )
@@ -23,6 +19,16 @@ class ItemLicitacao(BaseModel):
         default="Unidade",  # Valor default seguro caso a extração falhe
         description="Unidade de medida (ex: 'UN', 'Caixa').",
     )
+
+    @field_validator("unidade_fornecimento", mode="before")
+    @classmethod
+    def capitalize_unidade(cls, v: str) -> str:
+        # Se vier vazio, garante o padrão
+        if not v or not v.strip():
+            return "Unidade"
+
+        # Capitaliza a string
+        return v.strip().capitalize()
 
     @field_validator("lote", mode="before")
     @classmethod
@@ -58,9 +64,7 @@ class Licitacao(BaseModel):
     """
 
     arquivo_json: str = Field(..., description="Nome do arquivo JSON de origem.")
-    numero_pregao: str = Field(
-        ..., description="Número do pregão identificado nos metadados."
-    )
+    numero_pregao: str = Field(..., description="Número do pregão identificado nos metadados.")
     orgao: str = Field(..., description="Órgão público responsável.")
     cidade: str = Field(default="", description="Município do órgão licitante.")
     estado: str = Field(
