@@ -57,7 +57,7 @@ A arquitetura do projeto foi estruturada com foco em **modularidade, manutenibil
 A estrutura de diretórios foi construída priorizando a divisão lógica de responsabilidades, conforme o mapa:
 
 ```text
-PDF-STRUCTURE-MINER/
+ETL-LICITACOES/
 ├── src/                        # Código-fonte principal da aplicação
 │   ├── core/                   # Constantes e configurações fundamentais
 │   ├── extractors/             # Camada de entrada (extração bruta de PDF/DOCX)
