@@ -1,8 +1,8 @@
-![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python&logoColor=white)
-![Docker Ready](https://img.shields.io/badge/docker-Ready-2496ED.svg?logo=docker&logoColor=white)
+![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg?logo=python&logoColor=white)
+![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-Enabled-purple.svg?logo=python)
 ![Pydantic](https://img.shields.io/badge/Pydantic-Validated-e92063.svg?logo=pydantic&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 
 
@@ -134,7 +134,7 @@ graph TD
 Para o processamento em lote, a CLI é flexível e consegue lidar com licitações sem anexos, com anexos compactados, corrompidos, etc:
 
 ```text
-data/downloads/
+data/licitacoes/
 ├── 6af36fba...105e.json           # Arquivo JSON com metadados do órgão
 ├── 6af36fba...105e/               # Diretório com anexos
 │   ├── anexo_comp_1_edital.pdf    
@@ -184,7 +184,7 @@ docker run --rm -v "${PWD}/data:/app/data" extrator-licitacao --input "/app/data
 **1. Instale as dependências (Usando `uv` ou `pip`):**
 
 ```bash
-# Se usar UV (Rápido)
+# Se usar UV
 uv sync
 
 # Se usar Pip padrão
@@ -197,6 +197,10 @@ pip install -r requirements.txt
 **2. Execute a CLI nativamente:**
 
 ```bash
+# Se usar UV
+uv run main.py --input "./data/licitacoes" --output "./data/resultado.json" --verbose
+
+# Se estiver com o ambiente virtual ativo
 python main.py --input "./data/licitacoes" --output "./data/resultado.json" --verbose
 
 ```
@@ -206,7 +210,7 @@ python main.py --input "./data/licitacoes" --output "./data/resultado.json" --ve
 
 ## 📊 Estrutura de Saída (JSON)
 
-A aplicação gera um arquivo JSON consolidando os itens extraídos sob os metadados de origem:
+A aplicação gera um arquivo JSON consolidando os itens extraídos sob os metadados de origem, agrupando os resultados de todas as licitações processadas em um único array:
 
 ```json
 [
@@ -225,14 +229,33 @@ A aplicação gera um arquivo JSON consolidando os itens extraídos sob os metad
         "item": 1,
         "objeto": "Computador Desktop, Processador Core i7, 16GB RAM, SSD 512GB...",
         "quantidade": 50,
-        "unidade_fornecimento": "UNIDADE"
+        "unidade_fornecimento": "Unidade"
       },
       {
         "lote": "1",
         "item": 2,
         "objeto": "Monitor LED 24 polegadas, resolução Full HD, conexões HDMI e DisplayPort...",
         "quantidade": 50,
-        "unidade_fornecimento": "UNIDADE"
+        "unidade_fornecimento": "Unidade"
+      }
+    ]
+  },
+  {
+    "arquivo_json": "licitacao_saude_045.json",
+    "numero_pregao": "PE/045/2024",
+    "orgao": "Secretaria Estadual de Saúde",
+    "cidade": "Capital Exemplo",
+    "estado": "EX",
+    "anexos_processados": [
+      "edital_e_anexos_compilados.docx"
+    ],
+    "itens_extraidos": [
+      {
+        "lote": null,
+        "item": 1,
+        "objeto": "Ambulância Tipo A, furgão adaptado para simples remoção...",
+        "quantidade": 2,
+        "unidade_fornecimento": "Veículo"
       }
     ]
   }
